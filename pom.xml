@@ -8,20 +8,16 @@
     <version>0.1-SNAPSHOT</version>
     <dependencies>
         <dependency>
-<<<<<<< HEAD
-=======
             <groupId>com.jivesoftware.v3client</groupId>
             <artifactId>framework</artifactId>
             <version>0.1-SNAPSHOT</version>
         </dependency>
         <dependency>
->>>>>>> Add JUnit dependency
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>4.8.2</version>
             <scope>test</scope>
         </dependency>
-<<<<<<< HEAD
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpclient</artifactId>
@@ -34,7 +30,3 @@
         </dependency>
     </dependencies>
 </project>
-=======
-    </dependencies>
-</project>
->>>>>>> Add JUnit dependency
