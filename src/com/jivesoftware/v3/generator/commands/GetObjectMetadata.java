@@ -2,6 +2,7 @@ package com.jivesoftware.v3.generator.commands;
 
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.util.EntityUtils;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
@@ -11,13 +12,17 @@ import java.util.Date;
 /**
  * Created by gato on 2/28/14.
  */
-public class GetAllObjectMetadata extends JiveCommand {
+public class GetObjectMetadata extends JiveCommand {
 
-    private static final String service = api + "/metadata/objects/@all?fields=@all";
+    private String service;
+
+    public GetObjectMetadata(String service) {
+        this.service = service;
+    }
 
     @Override
-    public JSONObject execute() throws IOException, IllegalAccessException {
-        System.out.println(new Date() + " - Getting All Objects Metadata");
+    public JSONObject execute() throws JSONException, IOException, IllegalAccessException {
+        System.out.println(new Date() + " - Getting Object Metadata: " + service);
         CloseableHttpResponse response = get(service);
         int code = response.getStatusLine().getStatusCode();
         if (code == HttpURLConnection.HTTP_OK) {

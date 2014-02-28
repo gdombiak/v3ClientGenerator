@@ -23,6 +23,8 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.protocol.BasicHttpContext;
 import org.apache.http.protocol.HttpContext;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.URL;
@@ -68,7 +70,8 @@ public abstract class JiveCommand {
         URL jiveURL = new URL(jiveHome);
         String schema = jiveURL.getProtocol();
         String hostname = jiveURL.getHost();
-        HttpHost httpHost = new HttpHost(hostname, -1, schema);
+        int port = jiveURL.getPort();
+        HttpHost httpHost = new HttpHost(hostname, port, schema);
         authCache.put(httpHost, basicScheme);
         HttpContext httpContext = new BasicHttpContext();
         httpContext.setAttribute(ClientContext.AUTH_CACHE, authCache);
@@ -76,5 +79,5 @@ public abstract class JiveCommand {
         return httpclient.execute(request, httpContext);
     }
 
-    public abstract void execute() throws IOException;
+    public abstract JSONObject execute() throws JSONException, IOException, IllegalAccessException;
 }
