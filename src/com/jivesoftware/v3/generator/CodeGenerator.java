@@ -2,19 +2,37 @@ package com.jivesoftware.v3.generator;
 
 import com.jivesoftware.v3.generator.commands.GetObjectMetadata;
 import com.jivesoftware.v3.generator.commands.GetObjectTypes;
+import org.apache.commons.io.FileUtils;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 
 /**
  * Created by gato on 2/28/14.
  */
 public class CodeGenerator {
 
+    private static List<String> primitives;
+
+    static {
+        primitives = new ArrayList<String>();
+        primitives.add("String");
+        primitives.add("Integer");
+        primitives.add("Date");
+        primitives.add("Boolean");
+        primitives.add("JSONObject");
+        primitives.add("URI");
+    }
+
     public void generateCode() {
-        GetObjectTypes command = new GetObjectTypes();
         try {
+            createMavenProject();
+            GetObjectTypes command = new GetObjectTypes();
             JSONObject objectTypes = command.execute();
             Iterator keys = objectTypes.keys();
             while (keys.hasNext()) {
@@ -27,9 +45,204 @@ public class CodeGenerator {
         }
     }
 
+    private void createMavenProject() throws IOException {
+        String outputFolder = getOutputFolder();
+        File folder = new File(outputFolder);
+        if (folder.exists()) {
+            // Clean up folder
+            FileUtils.deleteDirectory(folder);
+        }
+
+        File pom = new File(outputFolder + "/pom.xml");
+        FileUtils.writeStringToFile(pom, getPOMFileContent());
+    }
+
+    private String getOutputFolder() {
+        return System.getProperty("output") == null ? "target/generated" : System.getProperty("output");
+    }
+
+    private String getPOMFileContent() {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"\n" +
+                "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+                "         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd\">\n" +
+                "    <modelVersion>4.0.0</modelVersion>\n" +
+                "    <groupId>com.jivesoftware.v3client</groupId>\n" +
+                "    <artifactId>library</artifactId>\n" +
+                "    <version>0.1-SNAPSHOT</version>\n" +
+                "    <dependencies>\n" +
+                "        <dependency>\n" +
+                "            <groupId>com.jivesoftware.v3client</groupId>\n" +
+                "            <artifactId>framework</artifactId>\n" +
+                "            <version>0.1-SNAPSHOT</version>\n" +
+                "        </dependency>\n" +
+                "        <dependency>\n" +
+                "            <groupId>org.json</groupId>\n" +
+                "            <artifactId>json</artifactId>\n" +
+                "            <version>20140107</version>\n" +
+                "        </dependency>\n" +
+                "    </dependencies>\n" +
+                "</project>\n";
+    }
+
     private void generateCodeFor(String typeURL) throws IOException, IllegalAccessException {
         GetObjectMetadata command = new GetObjectMetadata(typeURL);
         JSONObject typeSpec = command.execute();
-        System.out.println(typeSpec);
+
+        StringBuilder sb = new StringBuilder(100000);
+        addPackageAndImports(sb);
+        addClassDefinition(typeSpec, sb);
+        addConstructor(typeSpec, sb);
+        addInstanceVariables(typeSpec, sb);
+        addGettersAndSetters(typeSpec, sb);
+        addAbstractMethods(typeSpec, sb);
+        sb.append("}");
+        writeToFile(sb, getOutputFolder() + "/src/main/java/com/jivesoftware/v3client/framework/entities/" + getClassName(typeSpec) + ".java");
+//        System.out.println(sb.toString());
+    }
+
+    private void writeToFile(StringBuilder sb, String filename) throws IOException {
+        File file = new File(filename);
+        FileUtils.writeStringToFile(file, sb.toString());
+    }
+
+    private void addPackageAndImports(StringBuilder sb) {
+        sb.append("package com.jivesoftware.v3client.framework.entities;\n\n");
+
+        sb.append("import com.jivesoftware.v3client.framework.AbstractJiveClient;\n");
+        sb.append("import com.jivesoftware.v3client.framework.entity.*;\n\n");
+        sb.append("import com.jivesoftware.v3client.framework.type.EntityType;\n\n");
+        sb.append("import java.net.URI;\n");
+        sb.append("import java.util.Collection;\n");
+        sb.append("import java.util.Date;\n");
+        sb.append("import org.json.JSONObject;\n");
+        // TODO Add more imports
+    }
+
+    private void addClassDefinition(JSONObject typeSpec, StringBuilder sb) {
+        String className = getClassName(typeSpec);
+        sb.append("public class ").append(className).append(" extends AbstractEntity {\n\n");
+        // TODO Add extends once we have it
+    }
+
+    private void addConstructor(JSONObject typeSpec, StringBuilder sb) {
+        sb.append("\tpublic ").append(getClassName(typeSpec)).append("(AbstractJiveClient jiveClient) {\n");
+        sb.append("\t\tsuper(jiveClient);");
+        sb.append("}\n\n");
+    }
+
+    private String getClassName(JSONObject typeSpec) {
+        String name = typeSpec.getString("name");
+        return Character.toUpperCase(name.charAt(0)) + name.substring(1) + "Entity";
+    }
+
+    private void addInstanceVariables(JSONObject typeSpec, StringBuilder sb) {
+        JSONArray fields = typeSpec.getJSONArray("fields");
+        for (int i=0; i < fields.length(); i++) {
+            JSONObject field = fields.getJSONObject(i);
+            if (shouldIgnoreField(field)) {
+                // Ignore unpublished fields or resources field
+                continue;
+            }
+
+            sb.append("\tprivate ");
+            addJavaFieldType(getTypeFromJSON(field), sb);
+            sb.append(" _").append(getInstanceVariableName(field)).append(";\n");
+        }
+        sb.append("\n");
+    }
+
+    private String getInstanceVariableName(JSONObject field) {
+        String name = field.getString("name");
+        // Make sure word has no spaces
+        name = name.replaceAll(" ", "_");
+        return name;
+    }
+
+    private String getTypeFromJSON(JSONObject field) {
+        if (field.has("entityType")) {
+            return field.getString("entityType");
+        }
+        return field.getString("type");
+    }
+
+    private void addGettersAndSetters(JSONObject typeSpec, StringBuilder sb) {
+        JSONArray fields = typeSpec.getJSONArray("fields");
+        for (int i=0; i < fields.length(); i++) {
+            JSONObject field = fields.getJSONObject(i);
+            if (shouldIgnoreField(field)) {
+                // Ignore unpublished fields or resources field
+                continue;
+            }
+
+            String name = getInstanceVariableName(field);
+            String methodPartName = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+
+            sb.append("\tpublic ");
+            addJavaFieldType(getTypeFromJSON(field), sb);
+            sb.append(" get").append(methodPartName).append("() {\n");
+            sb.append("\t\treturn this._").append(name).append(";\n");
+            sb.append("\t}\n\n");
+
+            if (field.getBoolean("editable")) {
+                sb.append("\tpublic void set").append(methodPartName).append("(");
+                addJavaFieldType(getTypeFromJSON(field), sb);
+                sb.append(" _").append(name).append(") {\n");
+                sb.append("\t\tthis._").append(name).append(" = _").append(name).append(";\n");
+                sb.append("\t}\n\n");
+            }
+
+        }
+        sb.append("\n");
+    }
+
+    private void addAbstractMethods(JSONObject typeSpec, StringBuilder sb) {
+        sb.append("\t@Override\n");
+        sb.append("\tprotected EntityType<?> lookupResourceType(String s) {\n");
+        sb.append("\t\treturn null;\n");
+        sb.append("\t}\n\n");
+    }
+
+    private boolean shouldIgnoreField(JSONObject field) {
+        String name = field.getString("name");
+        return field.getBoolean("unpublished") || "resources".equals(name) || "id".equals(name) || "type".equals(name);
+    }
+
+    private void addJavaFieldType(String fieldType, StringBuilder sb) {
+        // Special case
+        if ("Entity".equals(fieldType)) {
+            sb.append("ContentEntity");
+            return;
+        }
+        if (fieldType.endsWith("[]")) {
+            // Handle collections
+            sb.append("Collection<");
+            addJavaFieldType(fieldType.substring(0, fieldType.length() - 2), sb);
+            sb.append(">");
+//            .append(fieldType.substring(0, fieldType.length() - 2)).append("Entity>");
+        } else {
+            // Check if we are dealing with a primitive type or not
+            if (primitives.contains(fieldType)) {
+                sb.append(fieldType);
+            } else {
+                // Make sure word has no spaces and starts with uppercase
+                fieldType = fieldType.replaceAll(" ", "_");
+                fieldType = Character.toUpperCase(fieldType.charAt(0)) + fieldType.substring(1);
+                // Special case for some weird fields
+                if ("text".equalsIgnoreCase(fieldType) || "Largetext".equalsIgnoreCase(fieldType)) {
+                    sb.append("String");
+                } else if ("any".equalsIgnoreCase(fieldType)) {
+                    sb.append("AbstractEntity");
+                } else if ("number".equalsIgnoreCase(fieldType)) {
+                    sb.append("Integer");
+                } else {
+                    sb.append(fieldType);
+                    // Weird HACK. To tired to think. Do not append Entity if already has it
+                    if (!fieldType.endsWith("Entity")) {
+                        sb.append("Entity");
+                    }
+                }
+            }
+        }
     }
 }
