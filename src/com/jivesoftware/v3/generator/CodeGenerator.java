@@ -21,12 +21,12 @@ public class CodeGenerator {
 
     static {
         primitives = new ArrayList<String>();
-        primitives.add("String");
-        primitives.add("Integer");
-        primitives.add("Date");
-        primitives.add("Boolean");
-        primitives.add("JSONObject");
-        primitives.add("URI");
+        primitives.add("string");
+        primitives.add("integer");
+        primitives.add("date");
+        primitives.add("boolean");
+        primitives.add("jsonobject");
+        primitives.add("uri");
     }
 
     public void generateCode() {
@@ -86,6 +86,9 @@ public class CodeGenerator {
     }
 
     private void generateCodeFor(String typeURL) throws IOException, IllegalAccessException {
+        if (shouldIgnoreClass(typeURL)) {
+            return;
+        }
         GetObjectMetadata command = new GetObjectMetadata(typeURL);
         JSONObject typeSpec = command.execute();
 
@@ -133,7 +136,13 @@ public class CodeGenerator {
 
     private String getClassName(JSONObject typeSpec) {
         String name = typeSpec.getString("name");
-        return Character.toUpperCase(name.charAt(0)) + name.substring(1) + "Entity";
+        String suffix = "Entity";
+        // Weird HACK. Too tired to think. Do not append Entity if already has it
+        if (name.endsWith("Entity")) {
+            suffix = "";
+        }
+
+        return Character.toUpperCase(name.charAt(0)) + name.substring(1) + suffix;
     }
 
     private void addInstanceVariables(JSONObject typeSpec, StringBuilder sb) {
@@ -203,9 +212,23 @@ public class CodeGenerator {
         sb.append("\t}\n\n");
     }
 
+    private boolean shouldIgnoreClass(String typeURL) {
+        // HACK to ignore some types that are having problems with generated code
+        return typeURL.endsWith("/url");
+    }
+
     private boolean shouldIgnoreField(JSONObject field) {
         String name = field.getString("name");
-        return field.getBoolean("unpublished") || "resources".equals(name) || "id".equals(name) || "type".equals(name);
+        if (field.getBoolean("unpublished") || "resources".equals(name) || "id".equals(name) || "type".equals(name)) {
+            return true;
+        } else {
+            // HACK to ignore special fields that should exist but don't
+            if (field.has("type")) {
+                String fieldType = field.getString("type");
+                return "email".equalsIgnoreCase(fieldType) || "phone".equalsIgnoreCase(fieldType);
+            }
+        }
+        return false;
     }
 
     private void addJavaFieldType(String fieldType, StringBuilder sb) {
@@ -222,7 +245,9 @@ public class CodeGenerator {
 //            .append(fieldType.substring(0, fieldType.length() - 2)).append("Entity>");
         } else {
             // Check if we are dealing with a primitive type or not
-            if (primitives.contains(fieldType)) {
+            if (primitives.contains(fieldType.toLowerCase())) {
+                // Make sure word starts with uppercase
+                fieldType = Character.toUpperCase(fieldType.charAt(0)) + fieldType.substring(1);
                 sb.append(fieldType);
             } else {
                 // Make sure word has no spaces and starts with uppercase
@@ -237,7 +262,7 @@ public class CodeGenerator {
                     sb.append("Integer");
                 } else {
                     sb.append(fieldType);
-                    // Weird HACK. To tired to think. Do not append Entity if already has it
+                    // Weird HACK. Too tired to think. Do not append Entity if already has it
                     if (!fieldType.endsWith("Entity")) {
                         sb.append("Entity");
                     }
