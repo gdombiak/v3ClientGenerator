@@ -98,6 +98,7 @@ public class CodeGenerator {
         addConstructor(typeSpec, sb);
         addInstanceVariables(typeSpec, sb);
         addGettersAndSetters(typeSpec, sb);
+        addVerbs(typeSpec, sb);
         addAbstractMethods(typeSpec, sb);
         sb.append("}");
         writeToFile(sb, getOutputFolder() + "/src/main/java/com/jivesoftware/v3client/framework/entities/" + getClassName(typeSpec) + ".java");
@@ -130,8 +131,8 @@ public class CodeGenerator {
 
     private void addConstructor(JSONObject typeSpec, StringBuilder sb) {
         sb.append("\tpublic ").append(getClassName(typeSpec)).append("(AbstractJiveClient jiveClient) {\n");
-        sb.append("\t\tsuper(jiveClient);");
-        sb.append("}\n\n");
+        sb.append("\t\tsuper(jiveClient);\n");
+        sb.append("\t}\n\n");
     }
 
     private String getClassName(JSONObject typeSpec) {
@@ -212,11 +213,57 @@ public class CodeGenerator {
         sb.append("\t}\n\n");
     }
 
+    private void addVerbs(JSONObject typeSpec, StringBuilder sb) {
+        if (!typeSpec.has("resourceLinks")) {
+            return;
+        }
+        JSONArray resourceLinks = typeSpec.getJSONArray("resourceLinks");
+        for (int i=0; i < resourceLinks.length(); i++) {
+            JSONObject resourceLink = resourceLinks.getJSONObject(i);
+            if (shouldIgnoreResourceLink(resourceLink)) {
+                // Ignore unpublished resources
+                continue;
+            }
+
+            String description = resourceLink.optString("description");
+            if (description != null) {
+//                sb.append("\t/**\n");
+//                sb.append("\t * ").append(description).append("\n");
+//                sb.append("\t */\n");
+            }
+            sb.append("\tpublic ");
+            // Add return type
+            String responseType = resourceLink.getString("responseType");
+            boolean hasResponse = !"void".equals(responseType);
+            addJavaFieldType(responseType, sb);
+            // Add method name
+            String methodName = resourceLink.getString("jsMethod");
+            methodName = "get".equals(methodName) ? "refresh" : methodName;
+            sb.append(" ").append(methodName).append("(");
+
+            String requestType = resourceLink.getString("requestType");
+            if (!"void".equals(requestType)) {
+                addJavaFieldType(requestType, sb);
+                sb.append(" input");
+            }
+            sb.append(") {\n");
+            if (hasResponse) {
+                sb.append("\t\treturn null; // TODO This\n");
+            }
+            sb.append("\t}\n\n");
+        }
+    }
+
     private boolean shouldIgnoreClass(String typeURL) {
         // HACK to ignore some types that are having problems with generated code
         return typeURL.endsWith("/url");
     }
 
+    /**
+     *
+     * @param field
+     * @return
+     */
     private boolean shouldIgnoreField(JSONObject field) {
         String name = field.getString("name");
         if (field.getBoolean("unpublished") || "resources".equals(name) || "id".equals(name) || "type".equals(name)) {
@@ -231,10 +278,27 @@ public class CodeGenerator {
         return false;
     }
 
+    private boolean shouldIgnoreResourceLink(JSONObject resourceLink) {
+        if (resourceLink.getBoolean("unpublished") || !resourceLink.has("jsMethod") || !resourceLink.has("responseType") || !resourceLink.has("requestType")
+                || "?".equals(resourceLink.optString("responseType")) || "?".equals(resourceLink.optString("requestType"))) {
+            return true;
+        } else {
+            // Hack time. To avoid duplicated methods lets ignore these things. Or just because they do not compile for some reason
+            String jsMethod = resourceLink.getString("jsMethod");
+            return "getOutcomeTypes".equals(jsMethod) || "getContentImages".equals(jsMethod) || "getAttachments".equals(jsMethod) || "getContentExternalURLs".equals(jsMethod) || "addParticipant".equals(jsMethod);
+        }
+    }
+
     private void addJavaFieldType(String fieldType, StringBuilder sb) {
         // Special case
         if ("Entity".equals(fieldType)) {
             sb.append("ContentEntity");
+            return;
+        } else if ("void".equals(fieldType)) {
+            sb.append("void");
+            return;
+        } else if ("Entity?".equals(fieldType)) {
+            sb.append("AbstractEntity");
             return;
         }
         if (fieldType.endsWith("[]")) {
