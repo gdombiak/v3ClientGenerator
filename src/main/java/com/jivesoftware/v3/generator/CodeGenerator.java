@@ -19,6 +19,17 @@ public class CodeGenerator {
 
     private static final Pattern MATCH_STATIC_METHOD_NAME = Pattern.compile("^osapi\\.jive\\.corev3(?:\\.(\\w+))?(?:\\.(\\w+))$");
     private static final Pattern MATCH_PATH_PARAM = Pattern.compile("\\{(\\w+)}");
+
+    private static final Comparator<Map.Entry<String,?>> MAGIC_QUERY_PARAM_ORDER = new Comparator<Map.Entry<String,?>>() {
+
+        private final MagicQueryParamOrder magicOrder = new MagicQueryParamOrder();
+
+        @Override
+        public int compare(Map.Entry<String,?> o1, Map.Entry<String,?> o2) {
+            return magicOrder.compare(o1.getKey(), o2.getKey());
+        }
+    };
+
     private static List<String> primitives;
 
     static {
@@ -297,7 +308,7 @@ public class CodeGenerator {
             String methodName = resourceLink.getString("jsMethod");
             methodName = "get".equals(methodName) ? "refresh" : methodName;
             addEnpointDef(methodName, resourceLink, "", true, sb);
-            addMethod(methodName, resourceLink, "", sb);
+            addMethod(typeSpec.getString("name"), methodName, resourceLink, "", sb);
         }
     }
 
@@ -306,15 +317,20 @@ public class CodeGenerator {
         sb.append("EndpointDef ").append(methodName).append("EndpointDef =\n");
         sb.append(indent).append("\t\t\tnew EndpointDef(").append(methodDef.optString("verb")).append(",\n");
         sb.append(indent).append("\t\t\t                \"").append(methodDef.optString("paramPath")).append("\",\n");
-        sb.append(indent).append("\t\t\t                new String[]{");
-        addFormattedJoin(extractQueryParams(methodDef), "\"%s\"", ", ", sb);
-        sb.append(indent).append("},\n");
-        sb.append(indent).append("\t\t\t                \"body\",\n");
+        sb.append(indent).append("\t\t\t                queryParams(");
+        addFormattedJoin(magicSortQueryParams(extractQueryParams(methodDef)), "\"%s\"", ", ", sb);
+        sb.append("),\n");
+        String requestType = methodDef.getString("requestType");
+        if (!"void".equals(requestType)) {
+            sb.append(indent).append("\t\t\t                \"").append(requestType).append("\",\n");
+        } else {
+            sb.append(indent).append("\t\t\t                null,\n");
+        }
         addParameterOverrides(methodDef, indent, sb);
         sb.append(indent).append(");\n\n");
     }
 
-    private void addMethod(String methodName, JSONObject methodDef, String indent, StringBuilder sb) {
+    private void addMethod(String containerType, String methodName, JSONObject methodDef, String indent, StringBuilder sb) {
         addJavadocs(methodDef.optString("description"), indent + "\t", sb);
         sb.append(indent).append("\tpublic ");
         // Add return type
@@ -327,7 +343,8 @@ public class CodeGenerator {
         boolean first = true;
         boolean hasBody = false;
         String requestType = methodDef.getString("requestType");
-        if (!"void".equals(requestType)) {
+        boolean selfUpdate = containerType != null && containerType.equals(requestType) && "update".equals(methodName);
+        if (!"void".equals(requestType) && !selfUpdate) {
             addJavaFieldType(requestType, true, sb);
             sb.append(" input");
             first = false;
@@ -339,13 +356,13 @@ public class CodeGenerator {
             else sb.append(", ");
             addFormattedJoin(pathParams, "String %s", ", ", sb);
         }
-        Set<String> queryParams = extractQueryParams(methodDef);
-        boolean filtered = queryParams.contains("filter");
+        Map<String,String> queryParams = extractQueryParams(methodDef);
+        boolean filtered = queryParams.containsKey("filter");
         if (filtered) queryParams.remove("filter");
         if (!queryParams.isEmpty()) {
             if (first) first = false;
             else sb.append(", ");
-            addFormattedJoin(queryParams, "String %s", ", ", sb);
+            addFormattedJoin(magicSortQueryParams(queryParams), "%2$s %1$s", ", ", sb);
         }
         if (filtered) {
             if (!first) sb.append(", ");
@@ -355,9 +372,12 @@ public class CodeGenerator {
         boolean hasParams = false;
         if (!queryParams.isEmpty() || !pathParams.isEmpty()) {
             sb.append(indent).append("\t\tNameValuePair.Builder parameters = NameValuePair.many();\n");
+            if (!pathParams.isEmpty()) {
+                sb.append(indent);
+                addFormattedJoin(pathParams, "\t\toptionalParam(parameters, \"%1$s\", %1$s);\n", indent, sb);
+            }
             sb.append(indent);
-            addFormattedJoin(pathParams, "\t\toptionalParam(parameters, \"%1$s\", %1$s);\n", indent, sb);
-            addFormattedJoin(queryParams, "\t\toptionalParam(parameters, \"%1$s\", %1$s);\n", indent, sb);
+            addFormattedJoin(magicSortQueryParams(queryParams), "\t\toptionalParam(parameters, \"%1$s\", %1$s);\n", indent, sb);
             if (filtered) {
                 sb.append(indent).append("\t\toptionalParam(parameters, filters);\n");
             }
@@ -369,16 +389,27 @@ public class CodeGenerator {
         sb.append(indent).append("\t\tHttpTransport.Request request = ");
         sb.append("buildRequest(").append(methodName).append("EndpointDef, ");
         sb.append(hasParams ? "parameters" : "null").append(", ");
-        sb.append(hasBody ? "input" : "null").append(");\n");
+        sb.append(hasBody ? "input" : selfUpdate ? "this" : "null").append(");\n");
         if (hasResponse) {
             sb.append(indent).append("\t\tHttpTransport.Response response = executeImpl(request);\n");
-            sb.append(indent).append("\t\treturn response.getBody(EntityTypeLibrary.ROOT.subLibrary(");
-            addJavaFieldType(responseType, false, sb);
+            if (responseType.endsWith("[]")) {
+                sb.append(indent).append("\t\treturn response.getEntities(EntityTypeLibrary.ROOT.subLibrary(");
+                addJavaFieldType(responseType.substring(0, responseType.length() - 2), false, sb);
+            } else {
+                sb.append(indent).append("\t\treturn response.getBody(EntityTypeLibrary.ROOT.subLibrary(");
+                addJavaFieldType(responseType, false, sb);
+            }
             sb.append(".class));\n");
         } else {
             sb.append(indent).append("\t\texecuteImpl(request);\n");
         }
         sb.append(indent).append("\t}\n\n");
+    }
+
+    private Collection<Map.Entry<String,String>> magicSortQueryParams(Map<String,String> queryParams) {
+        List<Map.Entry<String,String>> result = new ArrayList<>(queryParams.entrySet());
+        Collections.sort(result, MAGIC_QUERY_PARAM_ORDER);
+        return result;
     }
 
     private Set<String> extractPathParams(JSONObject methodDef) {
@@ -390,24 +421,30 @@ public class CodeGenerator {
         return result;
     }
 
-    private Set<String> extractQueryParams(JSONObject methodDef) {
-        Set<String> result = new LinkedHashSet<>();
-        JSONArray queryParams = methodDef.optJSONArray("queryParams");
-        if (queryParams != null && queryParams.length() > 0) {
-            for (int i = 0, l = queryParams.length() - 1; i <= l; i++) {
-                result.add(queryParams.optString(i));
+    private Map<String,String> extractQueryParams(JSONObject methodDef) {
+        Map<String,String> result = new LinkedHashMap<>();
+        JSONObject queryParams = methodDef.optJSONObject("queryParams");
+        if (queryParams != null) {
+            //noinspection unchecked
+            for (String key : (Iterable<String>)queryParams.keySet()) {
+                result.put(key, queryParams.optString(key));
             }
         }
         return result;
     }
 
-    private void addFormattedJoin(Collection<? extends Object> items, String format, String delim, StringBuilder sb) {
+    private void addFormattedJoin(Collection<?> items, String format, String delim, StringBuilder sb) {
         if (items == null) return;
         boolean first = true;
         for (Object item : items) {
             if (first) first = false;
             else sb.append(delim);
-            sb.append(String.format(format, item));
+            if (item instanceof Map.Entry) {
+                Map.Entry<?,?> entry = (Map.Entry) item;
+                sb.append(String.format(format, entry.getKey(), entry.getValue()));
+            } else {
+                sb.append(String.format(format, item));
+            }
         }
     }
 
@@ -480,7 +517,7 @@ public class CodeGenerator {
         for (Map.Entry<String,JSONObject> entry : staticClass.getStaticMethodsByName().entrySet()) {
             if (shouldIgnoreStaticMethod(entry.getValue())) continue;
             addEnpointDef(entry.getKey(), entry.getValue(), "\t", false, sb);
-            addMethod(entry.getKey(), entry.getValue(), "\t", sb);
+            addMethod(null, entry.getKey(), entry.getValue(), "\t", sb);
         }
         sb.append("\t}\n");
     }
