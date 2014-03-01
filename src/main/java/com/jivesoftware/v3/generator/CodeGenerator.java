@@ -125,11 +125,15 @@ public class CodeGenerator {
     }
 
     private void addClassDocs(JSONObject typeSpec, StringBuilder sb) {
-        String description = typeSpec.optString("description");
-        if (description != null) {
-            sb.append("\n/**\n");
-            sb.append(description.replaceAll("(?m)^", " * "));
-            sb.append("\n */\n");
+        sb.append("\n");
+        addJavadocs(typeSpec.optString("description"), "", sb);
+    }
+
+    private void addJavadocs(String description, String stringIndent, StringBuilder sb) {
+        if (description != null && description.length() > 0) {
+            sb.append(stringIndent).append("/**\n");
+            sb.append(description.replaceAll("(?m)^", stringIndent + " * ")).append("\n");
+            sb.append(stringIndent).append(" */\n");
         }
     }
 
@@ -198,6 +202,7 @@ public class CodeGenerator {
             String name = getInstanceVariableName(field);
             String methodPartName = Character.toUpperCase(name.charAt(0)) + name.substring(1);
 
+            addJavadocs(field.optString("description"), "\t", sb);
             sb.append("\tpublic ");
             addJavaFieldType(getTypeFromJSON(field), sb);
             sb.append(" get").append(methodPartName).append("() {\n");
@@ -205,6 +210,7 @@ public class CodeGenerator {
             sb.append("\t}\n\n");
 
             if (field.getBoolean("editable")) {
+                addJavadocs(field.optString("description"), "\t", sb);
                 sb.append("\tpublic void set").append(methodPartName).append("(");
                 addJavaFieldType(getTypeFromJSON(field), sb);
                 sb.append(" _").append(name).append(") {\n");
@@ -235,12 +241,7 @@ public class CodeGenerator {
                 continue;
             }
 
-            String description = resourceLink.optString("description");
-            if (description != null) {
-//                sb.append("\t/**\n");
-//                sb.append("\t * ").append(description).append("\n");
-//                sb.append("\t */\n");
-            }
+            addJavadocs(resourceLink.optString("description"), "\t", sb);
             sb.append("\tpublic ");
             // Add return type
             String responseType = resourceLink.getString("responseType");
