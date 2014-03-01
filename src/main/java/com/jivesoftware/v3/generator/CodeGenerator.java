@@ -17,7 +17,8 @@ import java.util.regex.Pattern;
  */
 public class CodeGenerator {
 
-    private static final Pattern MATCH_STATIC_METHOD_NAME = Pattern.compile("osapi\\.jive\\.corev3(?:\\.(\\w+))?(?:\\.(\\w+))");
+    private static final Pattern MATCH_STATIC_METHOD_NAME = Pattern.compile("^osapi\\.jive\\.corev3(?:\\.(\\w+))?(?:\\.(\\w+))$");
+    private static final Pattern MATCH_PATH_PARAM = Pattern.compile("\\{(\\w+)}");
     private static List<String> primitives;
 
     static {
@@ -151,6 +152,7 @@ public class CodeGenerator {
         sb.append("import com.jivesoftware.v3client.framework.AbstractJiveClient;\n");
         sb.append("import com.jivesoftware.v3client.framework.entity.*;\n");
         sb.append("import com.jivesoftware.v3client.framework.http.EndpointDef;\n");
+        sb.append("import com.jivesoftware.v3client.framework.http.HttpTransport;\n");
         sb.append("import com.jivesoftware.v3client.framework.NameValuePair;\n");
         sb.append("import com.jivesoftware.v3client.framework.type.EntityType;\n");
         sb.append("import com.jivesoftware.v3client.framework.type.EntityTypeLibrary;\n");
@@ -228,7 +230,7 @@ public class CodeGenerator {
             }
 
             sb.append("\tprivate ");
-            addJavaFieldType(getTypeFromJSON(field), sb);
+            addJavaFieldType(getTypeFromJSON(field), true, sb);
             sb.append(" _").append(getInstanceVariableName(field)).append(";\n");
         }
         sb.append("\n");
@@ -262,7 +264,7 @@ public class CodeGenerator {
 
             addJavadocs(field.optString("description"), "\t", sb);
             sb.append("\tpublic ");
-            addJavaFieldType(getTypeFromJSON(field), sb);
+            addJavaFieldType(getTypeFromJSON(field), true, sb);
             sb.append(" get").append(methodPartName).append("() {\n");
             sb.append("\t\treturn this._").append(name).append(";\n");
             sb.append("\t}\n\n");
@@ -270,7 +272,7 @@ public class CodeGenerator {
             if (field.getBoolean("editable")) {
                 addJavadocs(field.optString("description"), "\t", sb);
                 sb.append("\tpublic void set").append(methodPartName).append("(");
-                addJavaFieldType(getTypeFromJSON(field), sb);
+                addJavaFieldType(getTypeFromJSON(field), true, sb);
                 sb.append(" _").append(name).append(") {\n");
                 sb.append("\t\tthis._").append(name).append(" = _").append(name).append(";\n");
                 sb.append("\t}\n\n");
@@ -299,16 +301,16 @@ public class CodeGenerator {
         }
     }
 
-    private void addEnpointDef(String methodName, JSONObject resourceLink, String indent, boolean isStatic, StringBuilder sb) {
+    private void addEnpointDef(String methodName, JSONObject methodDef, String indent, boolean isStatic, StringBuilder sb) {
         sb.append(indent).append("\tprivate ").append(isStatic ? "static " : "").append("final ");
         sb.append("EndpointDef ").append(methodName).append("EndpointDef =\n");
-        sb.append(indent).append("\t\t\tnew EndpointDef(").append(resourceLink.optString("verb")).append(",\n");
-        sb.append(indent).append("\t\t\t                \"").append(resourceLink.optString("paramPath")).append("\",\n");
+        sb.append(indent).append("\t\t\tnew EndpointDef(").append(methodDef.optString("verb")).append(",\n");
+        sb.append(indent).append("\t\t\t                \"").append(methodDef.optString("paramPath")).append("\",\n");
         sb.append(indent).append("\t\t\t                new String[]{");
-        addQueryParams(resourceLink, sb);
+        addFormattedJoin(extractQueryParams(methodDef), "\"%s\"", ", ", sb);
         sb.append(indent).append("},\n");
         sb.append(indent).append("\t\t\t                \"body\",\n");
-        addParameterOverrides(resourceLink, indent, sb);
+        addParameterOverrides(methodDef, indent, sb);
         sb.append(indent).append(");\n\n");
     }
 
@@ -318,35 +320,94 @@ public class CodeGenerator {
         // Add return type
         String responseType = methodDef.getString("responseType");
         boolean hasResponse = !"void".equals(responseType);
-        addJavaFieldType(responseType, sb);
+        addJavaFieldType(responseType, true, sb);
         // Add method name
         sb.append(" ").append(methodName).append("(");
 
         boolean first = true;
+        boolean hasBody = false;
         String requestType = methodDef.getString("requestType");
         if (!"void".equals(requestType)) {
-            addJavaFieldType(requestType, sb);
+            addJavaFieldType(requestType, true, sb);
             sb.append(" input");
             first = false;
+            hasBody = true;
         }
-        // todo: add path params
-        // todo: add query params
+        Set<String> pathParams = extractPathParams(methodDef);
+        if (!pathParams.isEmpty()) {
+            if (first) first = false;
+            else sb.append(", ");
+            addFormattedJoin(pathParams, "String %s", ", ", sb);
+        }
+        Set<String> queryParams = extractQueryParams(methodDef);
+        boolean filtered = queryParams.contains("filter");
+        if (filtered) queryParams.remove("filter");
+        if (!queryParams.isEmpty()) {
+            if (first) first = false;
+            else sb.append(", ");
+            addFormattedJoin(queryParams, "String %s", ", ", sb);
+        }
+        if (filtered) {
+            if (!first) sb.append(", ");
+            sb.append("Iterable<NameValuePair> filters");
+        }
         sb.append(") {\n");
+        boolean hasParams = false;
+        if (!queryParams.isEmpty() || !pathParams.isEmpty()) {
+            sb.append(indent).append("\t\tNameValuePair.Builder parameters = NameValuePair.many();\n");
+            sb.append(indent);
+            addFormattedJoin(pathParams, "\t\toptionalParam(parameters, \"%1$s\", %1$s);\n", indent, sb);
+            addFormattedJoin(queryParams, "\t\toptionalParam(parameters, \"%1$s\", %1$s);\n", indent, sb);
+            if (filtered) {
+                sb.append(indent).append("\t\toptionalParam(parameters, filters);\n");
+            }
+            hasParams = true;
+        } else if (filtered) {
+            sb.append(indent).append("\t\tIterable<NameValuePair> parameters = (filters == null) ? NameValuePair.EMPTY : filters;\n");
+            hasParams = true;
+        }
+        sb.append(indent).append("\t\tHttpTransport.Request request = ");
+        sb.append("buildRequest(").append(methodName).append("EndpointDef, ");
+        sb.append(hasParams ? "parameters" : "null").append(", ");
+        sb.append(hasBody ? "input" : "null").append(");\n");
         if (hasResponse) {
-            sb.append(indent).append("\t\treturn null; // TODO This\n");
+            sb.append(indent).append("\t\tHttpTransport.Response response = executeImpl(request);\n");
+            sb.append(indent).append("\t\treturn response.getBody(EntityTypeLibrary.ROOT.subLibrary(");
+            addJavaFieldType(responseType, false, sb);
+            sb.append(".class));\n");
+        } else {
+            sb.append(indent).append("\t\texecuteImpl(request);\n");
         }
         sb.append(indent).append("\t}\n\n");
     }
 
-    private void addQueryParams(JSONObject resourceLink, StringBuilder sb) {
-        JSONArray queryParams = resourceLink.optJSONArray("queryParams");
+    private Set<String> extractPathParams(JSONObject methodDef) {
+        Set<String> result = new LinkedHashSet<>(4);
+        Matcher pathParamMatcher = MATCH_PATH_PARAM.matcher(methodDef.optString("paramPath"));
+        while (pathParamMatcher.find()) {
+            result.add(pathParamMatcher.group(1));
+        }
+        return result;
+    }
+
+    private Set<String> extractQueryParams(JSONObject methodDef) {
+        Set<String> result = new LinkedHashSet<>();
+        JSONArray queryParams = methodDef.optJSONArray("queryParams");
         if (queryParams != null && queryParams.length() > 0) {
-            boolean first = true;
             for (int i = 0, l = queryParams.length() - 1; i <= l; i++) {
-                if (first) first = false;
-                else sb.append(", ");
-                sb.append("\"").append(queryParams.optString(i)).append("\"");
+                result.add(queryParams.optString(i));
             }
+        }
+        return result;
+    }
+
+    private void addFormattedJoin(Collection<? extends Object> items, String format, String delim, StringBuilder sb) {
+        if (items == null) return;
+        boolean first = true;
+        for (Object item : items) {
+            if (first) first = false;
+            else sb.append(delim);
+            sb.append(String.format(format, item));
         }
     }
 
@@ -417,7 +478,7 @@ public class CodeGenerator {
         sb.append(" = new ").append(staticClass.getClassName()).append("();\n\n");
         sb.append("\tpublic class ").append(staticClass.getClassName()).append(" {\n\n");
         for (Map.Entry<String,JSONObject> entry : staticClass.getStaticMethodsByName().entrySet()) {
-            if ((entry.getValue().getString("responseType") + entry.getValue().optString("requestType")).contains("?")) continue;
+            if (shouldIgnoreStaticMethod(entry.getValue())) continue;
             addEnpointDef(entry.getKey(), entry.getValue(), "\t", false, sb);
             addMethod(entry.getKey(), entry.getValue(), "\t", sb);
         }
@@ -463,7 +524,18 @@ public class CodeGenerator {
         }
     }
 
-    private void addJavaFieldType(String fieldType, StringBuilder sb) {
+    private boolean shouldIgnoreStaticMethod(JSONObject staticMethod) {
+        if (staticMethod.getBoolean("unpublished") || !staticMethod.has("requestType") || !staticMethod.has("responseType")
+                || "?".equals(staticMethod.optString("responseType")) || "?".equals(staticMethod.optString("requestType"))) {
+            return true;
+        } else {
+            // Hack time. To avoid duplicated methods lets ignore these things. Or just because they do not compile for some reason
+            String methodName = staticMethod.getString("name");
+            return "osapi.jive.corev3.collaborations.participants".equals(methodName) || "osapi.jive.corev3.interactions.participants".equals(methodName);
+        }
+    }
+
+    private void addJavaFieldType(String fieldType, boolean includeGenericType, StringBuilder sb) {
         // Special case
         if ("Entity".equals(fieldType)) {
             sb.append("ContentEntity");
@@ -477,9 +549,12 @@ public class CodeGenerator {
         }
         if (fieldType.endsWith("[]")) {
             // Handle collections
-            sb.append("Collection<");
-            addJavaFieldType(fieldType.substring(0, fieldType.length() - 2), sb);
-            sb.append(">");
+            sb.append("Iterable");
+            if (includeGenericType) {
+                sb.append("<");
+                addJavaFieldType(fieldType.substring(0, fieldType.length() - 2), true, sb);
+                sb.append(">");
+            }
 //            .append(fieldType.substring(0, fieldType.length() - 2)).append("Entity>");
         } else {
             // Check if we are dealing with a primitive type or not
