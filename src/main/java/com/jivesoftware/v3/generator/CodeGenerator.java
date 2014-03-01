@@ -68,8 +68,8 @@ public class CodeGenerator {
                 "         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd\">\n" +
                 "    <modelVersion>4.0.0</modelVersion>\n" +
                 "    <groupId>com.jivesoftware.v3client</groupId>\n" +
-                "    <artifactId>library</artifactId>\n" +
-                "    <version>0.1-SNAPSHOT</version>\n" +
+                "    <artifactId>corev3-client</artifactId>\n" +
+                "    <version>8c2-SNAPSHOT</version>\n" +
                 "    <dependencies>\n" +
                 "        <dependency>\n" +
                 "            <groupId>com.jivesoftware.v3client</groupId>\n" +
