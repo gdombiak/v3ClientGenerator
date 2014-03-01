@@ -8,15 +8,16 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Created by gato on 2/28/14.
  */
 public class CodeGenerator {
 
+    private static final Pattern MATCH_STATIC_METHOD_NAME = Pattern.compile("osapi\\.jive\\.corev3(?:\\.(\\w+))?(?:\\.(\\w+))");
     private static List<String> primitives;
 
     static {
@@ -32,14 +33,27 @@ public class CodeGenerator {
     public void generateCode() {
         try {
             createMavenProject();
-            GetObjectTypes command = new GetObjectTypes();
-            JSONObject objectTypes = command.execute();
+            GetObjectTypes getObjectTypes = new GetObjectTypes();
+            JSONObject objectTypes = getObjectTypes.execute();
+            StringBuilder jiveClient = new StringBuilder(100000);
+            addJiveClientPackageAndImports(jiveClient);
+            addJiveClientClassDocs(jiveClient);
+            addJiveClientClassDefinition(jiveClient);
+            addJiveClientConstructor(jiveClient);
+            addJiveClientStaticBegin(jiveClient);
+            Map<String,StaticInnerClass> staticClasses = new TreeMap<>();
             Iterator keys = objectTypes.keys();
             while (keys.hasNext()) {
                 String type = (String) keys.next();
                 String typeURL = objectTypes.getString(type);
-                generateCodeFor(typeURL);
+                generateCodeFor(typeURL, staticClasses, jiveClient);
             }
+            addJiveClientStaticEnd(jiveClient);
+            for (StaticInnerClass staticClass : staticClasses.values()) {
+                addJiveClientStaticClass(staticClass, jiveClient);
+            }
+            addJiveClientClassEnd(jiveClient);
+            writeToFile(jiveClient, getOutputFolder() + "/src/main/java/com/jivesoftware/v3client/framework/JiveClient.java");
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -85,22 +99,23 @@ public class CodeGenerator {
                 "</project>\n";
     }
 
-    private void generateCodeFor(String typeURL) throws IOException, IllegalAccessException {
+    private void generateCodeFor(String typeURL, Map<String,StaticInnerClass> staticClasses, StringBuilder jiveClient) throws IOException, IllegalAccessException {
         if (shouldIgnoreClass(typeURL)) {
             return;
         }
         GetObjectMetadata command = new GetObjectMetadata(typeURL);
         JSONObject typeSpec = command.execute();
+        addStaticClasses(typeSpec, staticClasses);
 
         StringBuilder sb = new StringBuilder(100000);
         addPackageAndImports(sb);
         addClassDocs(typeSpec, sb);
         addClassDefinition(typeSpec, sb);
+        addEntityToLibrary(typeSpec, jiveClient);
         addConstructor(typeSpec, sb);
         addInstanceVariables(typeSpec, sb);
         addGettersAndSetters(typeSpec, sb);
         addVerbs(typeSpec, sb);
-        addAbstractMethods(typeSpec, sb);
         sb.append("}");
         writeToFile(sb, getOutputFolder() + "/src/main/java/com/jivesoftware/v3client/framework/entities/" + getClassName(typeSpec) + ".java");
 //        System.out.println(sb.toString());
@@ -111,16 +126,41 @@ public class CodeGenerator {
         FileUtils.writeStringToFile(file, sb.toString());
     }
 
+    private void addStaticClasses(JSONObject typeSpec, Map<String,StaticInnerClass> staticClasses) {
+        JSONArray methods = typeSpec.optJSONArray("staticMethods");
+        if (methods != null) {
+            for (int i = 0, l = methods.length(); i < l; i++) {
+                JSONObject jsonObject = methods.optJSONObject(i);
+                Matcher nameMatcher = MATCH_STATIC_METHOD_NAME.matcher(jsonObject.getString("name"));
+                if (nameMatcher.find()) {
+                    String name = nameMatcher.group(1);
+                    StaticInnerClass staticClass = staticClasses.get(name);
+                    if (staticClass == null) {
+                        staticClass = new StaticInnerClass(name);
+                        staticClasses.put(name, staticClass);
+                    }
+                    staticClass.getStaticMethodsByName().put(nameMatcher.group(2), jsonObject);
+                }
+            }
+        }
+    }
+
     private void addPackageAndImports(StringBuilder sb) {
         sb.append("package com.jivesoftware.v3client.framework.entities;\n\n");
 
         sb.append("import com.jivesoftware.v3client.framework.AbstractJiveClient;\n");
-        sb.append("import com.jivesoftware.v3client.framework.entity.*;\n\n");
-        sb.append("import com.jivesoftware.v3client.framework.type.EntityType;\n\n");
+        sb.append("import com.jivesoftware.v3client.framework.entity.*;\n");
+        sb.append("import com.jivesoftware.v3client.framework.http.EndpointDef;\n");
+        sb.append("import com.jivesoftware.v3client.framework.NameValuePair;\n");
+        sb.append("import com.jivesoftware.v3client.framework.type.EntityType;\n");
+        sb.append("import com.jivesoftware.v3client.framework.type.EntityTypeLibrary;\n");
+        sb.append("\n");
         sb.append("import java.net.URI;\n");
         sb.append("import java.util.Collection;\n");
         sb.append("import java.util.Date;\n");
         sb.append("import org.json.JSONObject;\n");
+        sb.append("\n");
+        sb.append("import static com.jivesoftware.v3client.framework.http.HttpTransport.Method.*;\n");
         // TODO Add more imports
     }
 
@@ -148,9 +188,22 @@ public class CodeGenerator {
         sb.append("public class ").append(className).append(" extends ").append(superClass).append(" {\n\n");
     }
 
+    private void addEntityToLibrary(JSONObject typeSpec, StringBuilder sb) {
+        if ("resource".equals(typeSpec.getString("name"))) return;
+        sb.append("\t\tEntityTypeLibrary.ROOT.add(new EntityType<");
+        sb.append(getClassName(typeSpec)).append(">(");
+        sb.append(getClassName(typeSpec)).append(".class, ");
+        sb.append("\"").append(typeSpec.getString("name")).append("\", ");
+        sb.append("\"").append(typeSpec.optString("plural", typeSpec.getString("name"))).append("\"");
+        sb.append("));\n");
+    }
+
     private void addConstructor(JSONObject typeSpec, StringBuilder sb) {
         sb.append("\tpublic ").append(getClassName(typeSpec)).append("(AbstractJiveClient jiveClient) {\n");
-        sb.append("\t\tsuper(jiveClient);\n");
+        sb.append("\t\tsuper(jiveClient, \"").append(typeSpec.getString("name")).append("\");\n");
+        sb.append("\t}\n\n");
+        sb.append("\tpublic ").append(getClassName(typeSpec)).append("() {\n");
+        sb.append("\t\tsuper(AbstractJiveClient.JIVE_CLIENT.get(), \"").append(typeSpec.getString("name")).append("\");\n");
         sb.append("\t}\n\n");
     }
 
@@ -227,13 +280,6 @@ public class CodeGenerator {
         sb.append("\n");
     }
 
-    private void addAbstractMethods(JSONObject typeSpec, StringBuilder sb) {
-        sb.append("\t@Override\n");
-        sb.append("\tprotected EntityType<?> lookupResourceType(String s) {\n");
-        sb.append("\t\treturn null;\n");
-        sb.append("\t}\n\n");
-    }
-
     private void addVerbs(JSONObject typeSpec, StringBuilder sb) {
         if (!typeSpec.has("resourceLinks")) {
             return;
@@ -246,28 +292,140 @@ public class CodeGenerator {
                 continue;
             }
 
-            addJavadocs(resourceLink.optString("description"), "\t", sb);
-            sb.append("\tpublic ");
-            // Add return type
-            String responseType = resourceLink.getString("responseType");
-            boolean hasResponse = !"void".equals(responseType);
-            addJavaFieldType(responseType, sb);
-            // Add method name
             String methodName = resourceLink.getString("jsMethod");
             methodName = "get".equals(methodName) ? "refresh" : methodName;
-            sb.append(" ").append(methodName).append("(");
-
-            String requestType = resourceLink.getString("requestType");
-            if (!"void".equals(requestType)) {
-                addJavaFieldType(requestType, sb);
-                sb.append(" input");
-            }
-            sb.append(") {\n");
-            if (hasResponse) {
-                sb.append("\t\treturn null; // TODO This\n");
-            }
-            sb.append("\t}\n\n");
+            addEnpointDef(methodName, resourceLink, "", true, sb);
+            addMethod(methodName, resourceLink, "", sb);
         }
+    }
+
+    private void addEnpointDef(String methodName, JSONObject resourceLink, String indent, boolean isStatic, StringBuilder sb) {
+        sb.append(indent).append("\tprivate ").append(isStatic ? "static " : "").append("final ");
+        sb.append("EndpointDef ").append(methodName).append("EndpointDef =\n");
+        sb.append(indent).append("\t\t\tnew EndpointDef(").append(resourceLink.optString("verb")).append(",\n");
+        sb.append(indent).append("\t\t\t                \"").append(resourceLink.optString("paramPath")).append("\",\n");
+        sb.append(indent).append("\t\t\t                new String[]{");
+        addQueryParams(resourceLink, sb);
+        sb.append(indent).append("},\n");
+        sb.append(indent).append("\t\t\t                \"body\",\n");
+        addParameterOverrides(resourceLink, indent, sb);
+        sb.append(indent).append(");\n\n");
+    }
+
+    private void addMethod(String methodName, JSONObject methodDef, String indent, StringBuilder sb) {
+        addJavadocs(methodDef.optString("description"), indent + "\t", sb);
+        sb.append(indent).append("\tpublic ");
+        // Add return type
+        String responseType = methodDef.getString("responseType");
+        boolean hasResponse = !"void".equals(responseType);
+        addJavaFieldType(responseType, sb);
+        // Add method name
+        sb.append(" ").append(methodName).append("(");
+
+        boolean first = true;
+        String requestType = methodDef.getString("requestType");
+        if (!"void".equals(requestType)) {
+            addJavaFieldType(requestType, sb);
+            sb.append(" input");
+            first = false;
+        }
+        // todo: add path params
+        // todo: add query params
+        sb.append(") {\n");
+        if (hasResponse) {
+            sb.append(indent).append("\t\treturn null; // TODO This\n");
+        }
+        sb.append(indent).append("\t}\n\n");
+    }
+
+    private void addQueryParams(JSONObject resourceLink, StringBuilder sb) {
+        JSONArray queryParams = resourceLink.optJSONArray("queryParams");
+        if (queryParams != null && queryParams.length() > 0) {
+            boolean first = true;
+            for (int i = 0, l = queryParams.length() - 1; i <= l; i++) {
+                if (first) first = false;
+                else sb.append(", ");
+                sb.append("\"").append(queryParams.optString(i)).append("\"");
+            }
+        }
+    }
+
+    private void addParameterOverrides(JSONObject resourceLink, String indent, StringBuilder sb) {
+        JSONObject parameterOverrides = resourceLink.optJSONObject("parameterOverrides");
+        if (parameterOverrides == null) {
+            sb.append(indent).append("\t\t\t                NameValuePair.EMPTY");
+        } else {
+            sb.append(indent).append("\t\t\t                NameValuePair.many()");
+            boolean first = true;
+            //noinspection unchecked
+            for (String name : (Iterable<String>)parameterOverrides.keySet()) {
+                if (first) first = false;
+                else sb.append(indent).append("\t\t\t                                    ");
+                sb.append(".add(\"").append(name).append("\",\"").append(parameterOverrides.optString(name)).append("\")\n");
+            }
+        }
+    }
+
+    private void addJiveClientPackageAndImports(StringBuilder sb) {
+        sb.append("package com.jivesoftware.v3client.framework;\n\n");
+
+        sb.append("import com.jivesoftware.v3client.framework.credentials.Credentials;\n");
+        sb.append("import com.jivesoftware.v3client.framework.entity.AbstractEntity;\n");
+        sb.append("import com.jivesoftware.v3client.framework.entity.ContentEntity;\n");
+        sb.append("import com.jivesoftware.v3client.framework.entity.PlaceEntity;\n");
+        sb.append("import com.jivesoftware.v3client.framework.entity.Entities;\n");
+        sb.append("import com.jivesoftware.v3client.framework.entities.*;\n");
+        sb.append("import com.jivesoftware.v3client.framework.http.EndpointDef;\n");
+        sb.append("import com.jivesoftware.v3client.framework.http.HttpTransport;\n");
+        sb.append("import com.jivesoftware.v3client.framework.type.EntityType;\n");
+        sb.append("import com.jivesoftware.v3client.framework.type.EntityTypeLibrary;\n");
+        sb.append("\n");
+        sb.append("import java.net.URI;\n");
+        sb.append("import java.util.Collection;\n");
+        sb.append("import java.util.Date;\n");
+        sb.append("import org.json.JSONObject;\n");
+        sb.append("\n");
+        sb.append("import static com.jivesoftware.v3client.framework.http.HttpTransport.Method.*;\n\n");
+    }
+
+    private void addJiveClientClassDocs(StringBuilder sb) {
+        sb.append("/**\n");
+        sb.append(" */\n");
+    }
+
+    private void addJiveClientClassDefinition(StringBuilder sb) {
+        sb.append("public class JiveClient extends AbstractJiveClient {\n\n");
+    }
+
+    private void addJiveClientConstructor(StringBuilder sb) {
+        sb.append("\tpublic JiveClient (String jiveURL, Credentials creds, HttpTransport transport) {\n");
+        sb.append("\t\tsuper(jiveURL, creds, transport);\n");
+        sb.append("\t}\n\n");
+    }
+
+    private void addJiveClientStaticBegin(StringBuilder sb) {
+        sb.append("\tstatic {\n\n");
+        sb.append("\t\t// Populate the type library\n\n");
+    }
+
+    private void addJiveClientStaticEnd(StringBuilder sb) {
+        sb.append("\t}\n\n");
+    }
+
+    private void addJiveClientStaticClass(StaticInnerClass staticClass, StringBuilder sb) {
+        sb.append("\tpublic final ").append(staticClass.getClassName()).append(" ").append(staticClass.getFieldName());
+        sb.append(" = new ").append(staticClass.getClassName()).append("();\n\n");
+        sb.append("\tpublic class ").append(staticClass.getClassName()).append(" {\n\n");
+        for (Map.Entry<String,JSONObject> entry : staticClass.getStaticMethodsByName().entrySet()) {
+            if ((entry.getValue().getString("responseType") + entry.getValue().optString("requestType")).contains("?")) continue;
+            addEnpointDef(entry.getKey(), entry.getValue(), "\t", false, sb);
+            addMethod(entry.getKey(), entry.getValue(), "\t", sb);
+        }
+        sb.append("\t}\n");
+    }
+
+    private void addJiveClientClassEnd(StringBuilder sb) {
+        sb.append("}\n");
     }
 
     private boolean shouldIgnoreClass(String typeURL) {
