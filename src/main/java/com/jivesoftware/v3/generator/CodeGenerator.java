@@ -94,6 +94,7 @@ public class CodeGenerator {
 
         StringBuilder sb = new StringBuilder(100000);
         addPackageAndImports(sb);
+        addClassDocs(typeSpec, sb);
         addClassDefinition(typeSpec, sb);
         addConstructor(typeSpec, sb);
         addInstanceVariables(typeSpec, sb);
@@ -121,6 +122,15 @@ public class CodeGenerator {
         sb.append("import java.util.Date;\n");
         sb.append("import org.json.JSONObject;\n");
         // TODO Add more imports
+    }
+
+    private void addClassDocs(JSONObject typeSpec, StringBuilder sb) {
+        String description = typeSpec.optString("description");
+        if (description != null) {
+            sb.append("\n/**\n");
+            sb.append(description.replaceAll("(?m)^", " * "));
+            sb.append("\n */\n");
+        }
     }
 
     private void addClassDefinition(JSONObject typeSpec, StringBuilder sb) {
