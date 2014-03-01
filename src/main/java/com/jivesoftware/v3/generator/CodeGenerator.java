@@ -139,8 +139,13 @@ public class CodeGenerator {
 
     private void addClassDefinition(JSONObject typeSpec, StringBuilder sb) {
         String className = getClassName(typeSpec);
-        sb.append("public class ").append(className).append(" extends AbstractEntity {\n\n");
-        // TODO Add extends once we have it
+        String superClass = "AbstractEntity";
+        if (typeSpec.optBoolean("content")) {
+            superClass = "ContentEntity";
+        } else if (typeSpec.optBoolean("place")) {
+            superClass = "PlaceEntity";
+        }
+        sb.append("public class ").append(className).append(" extends ").append(superClass).append(" {\n\n");
     }
 
     private void addConstructor(JSONObject typeSpec, StringBuilder sb) {
