@@ -94,6 +94,7 @@ public class CodeGenerator {
 
         StringBuilder sb = new StringBuilder(100000);
         addPackageAndImports(sb);
+        addClassDocs(typeSpec, sb);
         addClassDefinition(typeSpec, sb);
         addConstructor(typeSpec, sb);
         addInstanceVariables(typeSpec, sb);
@@ -123,10 +124,28 @@ public class CodeGenerator {
         // TODO Add more imports
     }
 
+    private void addClassDocs(JSONObject typeSpec, StringBuilder sb) {
+        sb.append("\n");
+        addJavadocs(typeSpec.optString("description"), "", sb);
+    }
+
+    private void addJavadocs(String description, String stringIndent, StringBuilder sb) {
+        if (description != null && description.length() > 0) {
+            sb.append(stringIndent).append("/**\n");
+            sb.append(description.replaceAll("(?m)^", stringIndent + " * ")).append("\n");
+            sb.append(stringIndent).append(" */\n");
+        }
+    }
+
     private void addClassDefinition(JSONObject typeSpec, StringBuilder sb) {
         String className = getClassName(typeSpec);
-        sb.append("public class ").append(className).append(" extends AbstractEntity {\n\n");
-        // TODO Add extends once we have it
+        String superClass = "AbstractEntity";
+        if (typeSpec.optBoolean("content")) {
+            superClass = "ContentEntity";
+        } else if (typeSpec.optBoolean("place")) {
+            superClass = "PlaceEntity";
+        }
+        sb.append("public class ").append(className).append(" extends ").append(superClass).append(" {\n\n");
     }
 
     private void addConstructor(JSONObject typeSpec, StringBuilder sb) {
@@ -188,6 +207,7 @@ public class CodeGenerator {
             String name = getInstanceVariableName(field);
             String methodPartName = Character.toUpperCase(name.charAt(0)) + name.substring(1);
 
+            addJavadocs(field.optString("description"), "\t", sb);
             sb.append("\tpublic ");
             addJavaFieldType(getTypeFromJSON(field), sb);
             sb.append(" get").append(methodPartName).append("() {\n");
@@ -195,6 +215,7 @@ public class CodeGenerator {
             sb.append("\t}\n\n");
 
             if (field.getBoolean("editable")) {
+                addJavadocs(field.optString("description"), "\t", sb);
                 sb.append("\tpublic void set").append(methodPartName).append("(");
                 addJavaFieldType(getTypeFromJSON(field), sb);
                 sb.append(" _").append(name).append(") {\n");
@@ -225,12 +246,7 @@ public class CodeGenerator {
                 continue;
             }
 
-            String description = resourceLink.optString("description");
-            if (description != null) {
-//                sb.append("\t/**\n");
-//                sb.append("\t * ").append(description).append("\n");
-//                sb.append("\t */\n");
-            }
+            addJavadocs(resourceLink.optString("description"), "\t", sb);
             sb.append("\tpublic ");
             // Add return type
             String responseType = resourceLink.getString("responseType");
