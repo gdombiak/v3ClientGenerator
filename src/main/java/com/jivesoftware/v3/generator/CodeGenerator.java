@@ -350,7 +350,7 @@ public class CodeGenerator {
             first = false;
             hasBody = true;
         }
-        Set<String> pathParams = extractPathParams(methodDef);
+        Set<String> pathParams = containerType != null ? Collections.<String>emptySet() : extractPathParams(methodDef);
         if (!pathParams.isEmpty()) {
             if (first) first = false;
             else sb.append(", ");
@@ -369,6 +369,11 @@ public class CodeGenerator {
             sb.append("Iterable<NameValuePair> filters");
         }
         sb.append(") {\n");
+        if (containerType != null) {
+            sb.append(indent).append("\t\tString ref = resourceRef(");
+            sb.append(methodDef.optString("verb")).append(", ");
+            sb.append("\"").append(methodDef.optString("name")).append("\");\n");
+        }
         boolean hasParams = false;
         if (!queryParams.isEmpty() || !pathParams.isEmpty()) {
             sb.append(indent).append("\t\tNameValuePair.Builder parameters = NameValuePair.many();\n");
@@ -388,6 +393,9 @@ public class CodeGenerator {
         }
         sb.append(indent).append("\t\tHttpTransport.Request request = ");
         sb.append("buildRequest(").append(methodName).append("EndpointDef, ");
+        if (containerType != null) {
+            sb.append("ref, ");
+        }
         sb.append(hasParams ? "parameters" : "null").append(", ");
         sb.append(hasBody ? "input" : selfUpdate ? "this" : "null").append(");\n");
         if (hasResponse) {
