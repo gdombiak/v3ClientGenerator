@@ -279,15 +279,11 @@ public class CodeGenerator {
             sb.append(" get").append(methodPartName).append("() {\n");
             sb.append("\t\treturn this._").append(name).append(";\n");
             sb.append("\t}\n\n");
-
-            if (field.getBoolean("editable")) {
-                addJavadocs(field.optString("description"), "\t", sb);
-                sb.append("\tpublic void set").append(methodPartName).append("(");
-                addJavaFieldType(getTypeFromJSON(field), true, sb);
-                sb.append(" _").append(name).append(") {\n");
-                sb.append("\t\tthis._").append(name).append(" = _").append(name).append(";\n");
-                sb.append("\t}\n\n");
-            }
+            sb.append("\tpublic void set").append(methodPartName).append("(");
+            addJavaFieldType(getTypeFromJSON(field), true, sb);
+            sb.append(" _").append(name).append(") {\n");
+            sb.append("\t\tthis._").append(name).append(" = _").append(name).append(";\n");
+            sb.append("\t}\n\n");
 
         }
         sb.append("\n");
