@@ -54,6 +54,8 @@ public class CodeGenerator {
             addJiveClientConstructor(jiveClient);
             addJiveClientStaticBegin(jiveClient);
             Map<String,StaticInnerClass> staticClasses = new TreeMap<>();
+            addStaticClasses(getContentsEntity(), staticClasses);
+            addStaticClasses(getPlacesEntity(), staticClasses);
             Iterator keys = objectTypes.keys();
             while (keys.hasNext()) {
                 String type = (String) keys.next();
@@ -109,6 +111,52 @@ public class CodeGenerator {
                 "        </dependency>\n" +
                 "    </dependencies>\n" +
                 "</project>\n";
+    }
+
+    private JSONObject getContentsEntity() {
+        return new JSONObject("" +
+                "{\n" +
+                "  \"staticMethods\" : [{\n" +
+                "    \"name\" : \"osapi.jive.corev3.contents.find\",\n" +
+                "    \"description\" : \"<p>Return a paginated list of contents that match the specified criteria.</p>\",\n" +
+                "    \"responseType\" : \"content[]\",\n" +
+                "    \"unpublished\" : false,\n" +
+                "    \"verb\" : \"GET\",\n" +
+                "    \"paramPath\" : \"/contents\",\n" +
+                "    \"queryParams\" : {\n" +
+                "      \"count\" : \"Integer\",\n" +
+                "      \"fields\" : \"String\",\n" +
+                "      \"filter\" : \"String[]\",\n" +
+                "      \"sort\" : \"String\",\n" +
+                "      \"startIndex\" : \"Integer\"\n" +
+                "    },\n" +
+                "    \"requestType\" : \"void\",\n" +
+                "    \"hasBodyParam\" : false\n" +
+                "  }]\n" +
+                "}");
+    }
+
+    private JSONObject getPlacesEntity() {
+        return new JSONObject("" +
+                "{\n" +
+                "  \"staticMethods\" : [{\n" +
+                "    \"name\" : \"osapi.jive.corev3.places.find\",\n" +
+                "    \"description\" : \"<p>Return a paginated list of places that match the specified criteria.</p>\",\n" +
+                "    \"responseType\" : \"content[]\",\n" +
+                "    \"unpublished\" : false,\n" +
+                "    \"verb\" : \"GET\",\n" +
+                "    \"paramPath\" : \"/contents\",\n" +
+                "    \"queryParams\" : {\n" +
+                "      \"count\" : \"Integer\",\n" +
+                "      \"fields\" : \"String\",\n" +
+                "      \"filter\" : \"String[]\",\n" +
+                "      \"sort\" : \"String\",\n" +
+                "      \"startIndex\" : \"Integer\"\n" +
+                "    },\n" +
+                "    \"requestType\" : \"void\",\n" +
+                "    \"hasBodyParam\" : false\n" +
+                "  }]\n" +
+                "}");
     }
 
     private void generateCodeFor(String typeURL, Map<String,StaticInnerClass> staticClasses, StringBuilder jiveClient) throws IOException, IllegalAccessException {
@@ -454,7 +502,7 @@ public class CodeGenerator {
 
     private void addParameterOverrides(JSONObject resourceLink, String indent, StringBuilder sb) {
         JSONObject parameterOverrides = resourceLink.optJSONObject("parameterOverrides");
-        if (parameterOverrides == null) {
+        if (parameterOverrides == null || parameterOverrides.length() == 0) {
             sb.append(indent).append("\t\t\t                NameValuePair.EMPTY");
         } else {
             sb.append(indent).append("\t\t\t                NameValuePair.many()");
