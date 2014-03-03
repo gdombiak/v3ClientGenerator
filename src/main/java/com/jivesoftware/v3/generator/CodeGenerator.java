@@ -145,7 +145,7 @@ public class CodeGenerator {
                 "    \"responseType\" : \"place[]\",\n" +
                 "    \"unpublished\" : false,\n" +
                 "    \"verb\" : \"GET\",\n" +
-                "    \"paramPath\" : \"/contents\",\n" +
+                "    \"paramPath\" : \"/places\",\n" +
                 "    \"queryParams\" : {\n" +
                 "      \"count\" : \"Integer\",\n" +
                 "      \"fields\" : \"String\",\n" +
