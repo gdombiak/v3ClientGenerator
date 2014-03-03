@@ -323,7 +323,7 @@ public class CodeGenerator {
             sb.append(indent).append("\t\t\t                null,\n");
         }
         addParameterOverrides(methodDef, indent, sb);
-        sb.append(indent).append(");\n\n");
+        sb.append(");\n\n");
     }
 
     private void addMethod(String containerType, String methodName, JSONObject methodDef, String indent, StringBuilder sb) {
@@ -462,8 +462,8 @@ public class CodeGenerator {
             //noinspection unchecked
             for (String name : (Iterable<String>)parameterOverrides.keySet()) {
                 if (first) first = false;
-                else sb.append(indent).append("\t\t\t                                    ");
-                sb.append(".add(\"").append(name).append("\",\"").append(parameterOverrides.optString(name)).append("\")\n");
+                else sb.append("\n").append(indent).append("\t\t\t                                    ");
+                sb.append(".add(\"").append(name).append("\",\"").append(parameterOverrides.optString(name)).append("\")");
             }
         }
     }
