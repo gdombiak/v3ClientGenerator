@@ -110,6 +110,31 @@ public class CodeGenerator {
                 "            <version>20140107</version>\n" +
                 "        </dependency>\n" +
                 "    </dependencies>\n" +
+                "    <build>\n" +
+                "        <plugins>\n" +
+                "            <plugin>\n" +
+                "                <groupId>org.apache.maven.plugins</groupId>\n" +
+                "                <artifactId>maven-compiler-plugin</artifactId>\n" +
+                "                <version>3.1</version>\n" +
+                "                <configuration>\n" +
+                "                    <source>1.7</source>\n" +
+                "                    <target>1.7</target>\n" +
+                "                </configuration>\n" +
+                "            </plugin>\n" +
+                "            <plugin>\n" +
+                "                <groupId>org.apache.maven.plugins</groupId>\n" +
+                "                <artifactId>maven-source-plugin</artifactId>\n" +
+                "                <executions>\n" +
+                "                    <execution>\n" +
+                "                        <id>attach-sources</id>\n" +
+                "                        <goals>\n" +
+                "                            <goal>jar</goal>\n" +
+                "                        </goals>\n" +
+                "                    </execution>\n" +
+                "                </executions>\n" +
+                "            </plugin>\n" +
+                "        </plugins>\n" +
+                "    </build>\n" +
                 "</project>\n";
     }
 
