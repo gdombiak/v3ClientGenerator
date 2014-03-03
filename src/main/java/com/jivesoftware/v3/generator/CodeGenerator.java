@@ -142,7 +142,7 @@ public class CodeGenerator {
                 "  \"staticMethods\" : [{\n" +
                 "    \"name\" : \"osapi.jive.corev3.places.find\",\n" +
                 "    \"description\" : \"<p>Return a paginated list of places that match the specified criteria.</p>\",\n" +
-                "    \"responseType\" : \"content[]\",\n" +
+                "    \"responseType\" : \"place[]\",\n" +
                 "    \"unpublished\" : false,\n" +
                 "    \"verb\" : \"GET\",\n" +
                 "    \"paramPath\" : \"/contents\",\n" +
